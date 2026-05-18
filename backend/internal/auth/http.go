@@ -8,7 +8,11 @@ import (
 )
 
 func RegisterHTTP(r *gin.Engine, svc *Service) {
-	r.POST("/v1/auth/login", func(c *gin.Context) {
+	r.GET("/health", func(c *gin.Context) {
+		httpx.OK(c, gin.H{"status": "ok", "service": "auth-service"})
+	})
+
+	loginHandler := func(c *gin.Context) {
 		var req LoginRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			httpx.Fail(c, http.StatusBadRequest, "请求格式错误")
@@ -20,5 +24,8 @@ func RegisterHTTP(r *gin.Engine, svc *Service) {
 			return
 		}
 		httpx.OK(c, result)
-	})
+	}
+
+	r.POST("/v1/auth/login", loginHandler)
+	r.POST("/api/auth/login", loginHandler)
 }

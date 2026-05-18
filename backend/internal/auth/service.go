@@ -6,7 +6,8 @@ import (
 	"time"
 
 	"didi/backend/internal/contracts"
-	"github.com/google/uuid"
+	"didi/backend/internal/domain"
+	"didi/backend/internal/services"
 )
 
 type LoginRequest struct {
@@ -27,13 +28,17 @@ type Service struct{ repo *MemoryRepo }
 func NewService(repo *MemoryRepo) *Service { return &Service{repo: repo} }
 
 func (s *Service) Login(_ context.Context, req LoginRequest) (LoginResult, error) {
-	if req.Code != "123456" {
-		return LoginResult{}, fmt.Errorf("验证码错误")
+	if !s.repo.IdentityExists(req.Phone, req.Role) {
+		return LoginResult{}, fmt.Errorf("手机号与登录角色不匹配")
+	}
+	accessToken, refreshToken, expiresAt, err := services.IssueTokens(req.Phone, domain.AccountRole(req.Role))
+	if err != nil {
+		return LoginResult{}, err
 	}
 	return LoginResult{
-		AccessToken:  "access-" + uuid.NewString(),
-		RefreshToken: "refresh-" + uuid.NewString(),
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
 		Role:         req.Role,
-		ExpiresAt:    time.Now().Add(2 * time.Hour),
+		ExpiresAt:    expiresAt,
 	}, nil
 }

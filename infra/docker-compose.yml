@@ -39,15 +39,29 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+  auth-service:
+    build: ../backend
+    command: ["/bin/didi-auth-service"]
+    expose:
+      - "18081"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:18081/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
   gateway:
     build: ../backend
     command: ["/bin/didi-gateway"]
     environment:
       API_BASE: http://api:8080
+      AUTH_BASE: http://auth-service:18081
     ports:
       - "8080:8080"
     depends_on:
       api:
+        condition: service_healthy
+      auth-service:
         condition: service_healthy
   frontend:
     build: ../frontend

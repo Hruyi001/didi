@@ -119,6 +119,26 @@ func TestAdminLoginAllowsDemoAdminPhone(t *testing.T) {
 	}
 }
 
+func TestSharedSignedTokenAllowsPassengerOrders(t *testing.T) {
+	s := store.NewMemoryStore()
+	s.SeedPassenger("13800000001")
+	app := &App{Store: s, Auth: services.NewAuthService(), Risk: services.NewRiskService(), Orders: services.NewOrderService(s), Dispatch: services.NewDispatchService(s), Payment: services.NewPaymentService(s), Events: NewEventHub()}
+	router := NewRouter(app)
+
+	token, _, _, err := services.IssueTokens("13800000001", domain.RolePassenger)
+	if err != nil {
+		t.Fatalf("issue token: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/passenger/orders", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", res.Code, res.Body.String())
+	}
+}
+
 func loginToken(t *testing.T, router http.Handler, role domain.AccountRole) string {
 	t.Helper()
 	body := map[string]any{"phone": "13800000001", "code": "123456", "role": role}

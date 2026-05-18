@@ -21,7 +21,7 @@ func (a *App) requireAuth(roles ...domain.AccountRole) gin.HandlerFunc {
 			return
 		}
 		token := strings.TrimPrefix(authorization, "Bearer ")
-		session, err := a.Auth.ValidateAccessToken(token)
+		session, err := services.ValidateToken(token)
 		if err != nil {
 			fail(c, http.StatusUnauthorized, err.Error())
 			c.Abort()

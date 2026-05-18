@@ -8,7 +8,8 @@ import (
 )
 
 type Clients struct {
-	APIBase string
+	APIBase  string
+	AuthBase string
 }
 
 func NewRouter(clients *Clients) *gin.Engine {
@@ -18,7 +19,17 @@ func NewRouter(clients *Clients) *gin.Engine {
 	})
 	if clients != nil && clients.APIBase != "" {
 		apiProxy := newReverseProxy(clients.APIBase)
-		r.Any("/api/*path", gin.WrapH(apiProxy))
+		loginProxy := apiProxy
+		if clients.AuthBase != "" {
+			loginProxy = newReverseProxy(clients.AuthBase)
+		}
+		r.Any("/api/*path", func(c *gin.Context) {
+			if c.Request.URL.Path == "/api/auth/login" && c.Request.Method == "POST" {
+				gin.WrapH(loginProxy)(c)
+				return
+			}
+			gin.WrapH(apiProxy)(c)
+		})
 		r.Any("/ws", gin.WrapH(apiProxy))
 	}
 	return r
