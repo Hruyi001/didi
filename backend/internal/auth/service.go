@@ -23,9 +23,25 @@ type LoginResult struct {
 	ExpiresAt    time.Time             `json:"expiresAt"`
 }
 
-type Service struct{ repo *MemoryRepo }
+type Service struct {
+	repo *MemoryRepo
+	risk *services.RiskService
+	sms  *services.AuthService
+}
 
-func NewService(repo *MemoryRepo) *Service { return &Service{repo: repo} }
+func NewService(repo *MemoryRepo, risk *services.RiskService, sms *services.AuthService) *Service {
+	return &Service{repo: repo, risk: risk, sms: sms}
+}
+
+func (s *Service) SendCode(phone string) (string, error) {
+	if phone == "" {
+		return "", fmt.Errorf("手机号不能为空")
+	}
+	if err := s.risk.CheckSMS(phone); err != nil {
+		return "", err
+	}
+	return s.sms.SendCode(phone), nil
+}
 
 func (s *Service) Login(_ context.Context, req LoginRequest) (LoginResult, error) {
 	if !s.repo.IdentityExists(req.Phone, req.Role) {

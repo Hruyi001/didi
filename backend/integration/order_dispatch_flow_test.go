@@ -7,6 +7,51 @@ import (
 	"testing"
 )
 
+func TestPassengerSendCodeViaGateway(t *testing.T) {
+	payload := []byte(`{"phone":"13800000001"}`)
+	res, err := http.Post("http://localhost:8080/api/auth/send-code", "application/json", bytes.NewReader(payload))
+	if err != nil {
+		t.Fatalf("expected send-code success: %v", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", res.StatusCode)
+	}
+	var body map[string]any
+	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
+		t.Fatalf("expected JSON body: %v", err)
+	}
+	data, ok := body["data"].(map[string]any)
+	if !ok {
+		t.Fatal("expected data field in send-code response")
+	}
+	if data["message"] == "" {
+		t.Fatal("expected send-code message")
+	}
+}
+
+func TestPassengerSendCodeRateLimitViaGateway(t *testing.T) {
+	payload := []byte(`{"phone":"13800000009"}`)
+	for i := 0; i < 5; i++ {
+		res, err := http.Post("http://localhost:8080/api/auth/send-code", "application/json", bytes.NewReader(payload))
+		if err != nil {
+			t.Fatalf("request %d expected success: %v", i+1, err)
+		}
+		res.Body.Close()
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("request %d expected 200, got %d", i+1, res.StatusCode)
+		}
+	}
+	res, err := http.Post("http://localhost:8080/api/auth/send-code", "application/json", bytes.NewReader(payload))
+	if err != nil {
+		t.Fatalf("expected rate-limit response: %v", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("expected 429, got %d", res.StatusCode)
+	}
+}
+
 func TestPassengerLoginViaGateway(t *testing.T) {
 	payload := []byte(`{"phone":"13800000001","code":"123456","role":"PASSENGER"}`)
 	res, err := http.Post("http://localhost:8080/api/auth/login", "application/json", bytes.NewReader(payload))

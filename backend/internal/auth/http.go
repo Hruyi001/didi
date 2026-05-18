@@ -12,6 +12,26 @@ func RegisterHTTP(r *gin.Engine, svc *Service) {
 		httpx.OK(c, gin.H{"status": "ok", "service": "auth-service"})
 	})
 
+	sendCodeHandler := func(c *gin.Context) {
+		var req struct {
+			Phone string `json:"phone"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			httpx.Fail(c, http.StatusBadRequest, "手机号不能为空")
+			return
+		}
+		message, err := svc.SendCode(req.Phone)
+		if err != nil {
+			status := http.StatusTooManyRequests
+			if err.Error() == "手机号不能为空" {
+				status = http.StatusBadRequest
+			}
+			httpx.Fail(c, status, err.Error())
+			return
+		}
+		httpx.OK(c, gin.H{"message": message})
+	}
+
 	loginHandler := func(c *gin.Context) {
 		var req LoginRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -26,6 +46,8 @@ func RegisterHTTP(r *gin.Engine, svc *Service) {
 		httpx.OK(c, result)
 	}
 
+	r.POST("/v1/auth/send-code", sendCodeHandler)
+	r.POST("/api/auth/send-code", sendCodeHandler)
 	r.POST("/v1/auth/login", loginHandler)
 	r.POST("/api/auth/login", loginHandler)
 }

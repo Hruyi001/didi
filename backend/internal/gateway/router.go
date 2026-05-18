@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"net/http"
 	"net/http/httputil"
 	"net/url"
 
@@ -19,13 +20,13 @@ func NewRouter(clients *Clients) *gin.Engine {
 	})
 	if clients != nil && clients.APIBase != "" {
 		apiProxy := newReverseProxy(clients.APIBase)
-		loginProxy := apiProxy
+		authProxy := apiProxy
 		if clients.AuthBase != "" {
-			loginProxy = newReverseProxy(clients.AuthBase)
+			authProxy = newReverseProxy(clients.AuthBase)
 		}
 		r.Any("/api/*path", func(c *gin.Context) {
-			if c.Request.URL.Path == "/api/auth/login" && c.Request.Method == "POST" {
-				gin.WrapH(loginProxy)(c)
+			if shouldProxyToAuth(c) {
+				gin.WrapH(authProxy)(c)
 				return
 			}
 			gin.WrapH(apiProxy)(c)
@@ -33,6 +34,18 @@ func NewRouter(clients *Clients) *gin.Engine {
 		r.Any("/ws", gin.WrapH(apiProxy))
 	}
 	return r
+}
+
+func shouldProxyToAuth(c *gin.Context) bool {
+	if c.Request.Method != http.MethodPost {
+		return false
+	}
+	switch c.Request.URL.Path {
+	case "/api/auth/login", "/api/auth/send-code":
+		return true
+	default:
+		return false
+	}
 }
 
 func newReverseProxy(target string) *httputil.ReverseProxy {

@@ -51,7 +51,7 @@ func TestLoginFallsBackToAPIProxyWithoutAuthBase(t *testing.T) {
 	}
 }
 
-func TestSendCodeStillRoutesToLegacyAPI(t *testing.T) {
+func TestSendCodeRoutesToAuthProxyWhenConfigured(t *testing.T) {
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, "api")
 	}))
@@ -65,6 +65,25 @@ func TestSendCodeStillRoutesToLegacyAPI(t *testing.T) {
 	defer server.Close()
 
 	body := requestBody(t, http.MethodPost, server.URL+"/api/auth/send-code")
+	if body != "auth" {
+		t.Fatalf("expected auth upstream, got %q", body)
+	}
+}
+
+func TestPassengerOrdersStillRouteToLegacyAPI(t *testing.T) {
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "api")
+	}))
+	defer api.Close()
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "auth")
+	}))
+	defer auth.Close()
+
+	server := httptest.NewServer(NewRouter(&Clients{APIBase: api.URL, AuthBase: auth.URL}))
+	defer server.Close()
+
+	body := requestBody(t, http.MethodGet, server.URL+"/api/passenger/orders")
 	if body != "api" {
 		t.Fatalf("expected api upstream, got %q", body)
 	}
