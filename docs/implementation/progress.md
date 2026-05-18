@@ -1,0 +1,83 @@
+# 实施过程记录
+
+## 2026-05-17
+
+- 已完成设计规格：`docs/superpowers/specs/2026-05-17-ride-hailing-platform-design.md`。
+- 已完成实施计划：`docs/superpowers/plans/2026-05-17-ride-hailing-platform.md`。
+- 开始按 TDD 实施后端领域模型。
+- 领域状态机测试先失败，失败原因：`CanTransitionOrder`、`CanCancelOrder` 未实现。
+- 已实现订单主状态流转和取消规则，`go test ./internal/domain` 通过。
+- 已实现内存存储、种子数据、订单版本号和司机状态更新，`go test ./internal/store` 通过。
+- 已实现订单、派单、支付、认证、风控服务，完整行程服务测试 `go test ./internal/services` 通过。
+- 已实现 HTTP API、管理端接口和 WebSocket 心跳，接口测试 `go test ./internal/http` 通过。
+- 已补充 MySQL schema、Docker Compose、后端 Dockerfile、Vue 三端前端和 README。
+- 最终验证通过：`go -C /root/didi/backend test ./...`。
+- 最终验证通过：`npm --prefix /root/didi/frontend run build`。
+- 最终验证通过：`docker compose -f /root/didi/infra/docker-compose.yml config`。
+- 运行验证通过：`go -C /root/didi/backend run ./cmd/api` 后，`curl http://localhost:8080/health` 返回 `{"data":{"status":"ok"}}`。
+- 运行验证通过：前端开发服务可启动，`http://localhost:5173/?app=passenger`、`?app=driver`、`?app=admin` 均可访问并返回页面标题 `打车平台`。
+- 清理误生成文件：已删除 `backend/package-lock.json`。
+- UI 自动化冒烟测试未执行：当前环境缺少 Python Playwright 模块和浏览器二进制，已记录为环境限制而非应用代码缺陷。
+- 已新增后端实时事件总线：订单创建、司机接单、司机到达、开始行程、结束行程、订单支付都会通过 WebSocket 广播 `order.updated` 事件。
+- 已新增实时测试：`TestCreateOrderPublishesRealtimeEvent`、`TestAcceptOrderPublishesWaitingPickupEvent`，并确认通过。
+- 已将乘客端、司机端、管理后台接入 `/ws`，收到实时订单事件后会主动刷新页面数据。
+- 这次调试发现后端测试卡住的根因是测试本身错误地等待一个不会发布的事件，而不是事件总线实现阻塞；已修正测试并重新通过全量后端测试。
+- 已新增司机位置能力：后端支持司机位置上报、乘客按订单查询已分配司机位置，并通过 WebSocket 广播 `driver.location` 事件。
+- 已新增位置相关测试：`TestUpdateAndGetDriverLocation`、`TestDriverLocationUpdatePublishesRealtimeEvent`、`TestPassengerCanReadAssignedDriverLocation`，均已通过。
+- 已补齐前端位置链路：司机端支持手动与定时上报模拟位置，乘客端可实时展示司机经纬度与速度。
+- 本轮验证通过：`go -C /root/didi/backend test ./...`、`npm --prefix /root/didi/frontend run build`。
+- 已补齐自动派单核心能力：司机拒单或超时未响应后，系统会自动改派下一位在线空闲司机；候选司机耗尽后订单会进入 `DISPATCH_FAILED`。
+- 已新增改派测试：`TestRejectRedispatchesToNextDriver`、`TestRejectFailsOrderAfterMaxAttempts`、`TestTimeoutRedispatchesToNextDriver`、`TestRejectOrderKeepsDispatchingWhenAnotherDriverExists`，并重新通过后端全量测试。
+- 运行时已增加派单超时轮询，后端服务启动后会按秒检查超时派单并自动推进状态。
+- 已补齐基础登录态：后端登录会生成内存会话并校验 `Bearer` token，乘客/司机/管理员接口已按角色加鉴权中间件，WebSocket 连接也要求携带 token。
+- 已补齐前端登录态接入：三端登录后会持久化 access token，请求头会自动附带 `Authorization`，实时连接会携带 token 查询参数。
+- 已新增鉴权测试：未登录访问返回 401，错角色访问返回 403，并重新通过后端全量测试与前端构建。
+- 已修复鉴权接入后的运行时回归：司机端已改为读取 `/api/driver/orders`，不再误用乘客订单接口；乘客端、司机端、管理端在登录成功后会立即建立带 token 的 WebSocket 连接，并在组件卸载时主动关闭连接。
+- 已新增 `TestDriverOrdersUsesDriverScope` 覆盖司机订单查询接口，确认司机端可以在鉴权开启后读取自己的订单视图。
+- 尝试使用浏览器脚本做本地 UI 回归时再次确认环境仍缺少 Python Playwright 模块，因此本轮 UI 自动化验证继续受环境限制；已用后端接口测试、前端构建和代码路径核对完成替代验证。
+- 已修复鉴权接入后的前端运行时回归：司机端改为读取 `/api/driver/orders`，不再错误调用乘客专属订单接口；乘客端、司机端、管理端登录成功后会立即建立实时连接，并在页面卸载时关闭连接与轮询定时器。
+- 已新增司机订单接口验证：`TestDriverOrdersUsesDriverScope`，并再次通过 `go -C /root/didi/backend test ./...` 与 `npm --prefix /root/didi/frontend run build`。
+- 本轮浏览器自动化未执行：当前环境不存在 `scripts/with_server.py`，且缺少 Python `playwright` 模块，因此保留为环境限制而非代码缺陷。
+- 已开始落地 Compose 一键演示环境：新增 `frontend/Dockerfile` 多阶段构建、`frontend/nginx.conf` 静态托管与 `/api`、`/ws` 反向代理，以及 `frontend/.dockerignore` 以缩小构建上下文。
+- 已更新 `infra/docker-compose.yml`：新增 `frontend` 服务，对外暴露 `8081`，并为 `api` 增加基于 `/health` 的健康检查；`frontend` 依赖 `api` 健康后再启动。
+- 已更新 `README.md`：将完整演示环境作为默认运行路径，补充 `docker compose up --build`、前端统一访问入口与 Compose 验证命令。
+- 已尝试运行 `docker compose -f /root/didi/infra/docker-compose.yml up --build -d` 做完整联调，但当前会话环境仅安装了 Docker CLI，未运行 Docker daemon：`/var/run/docker.sock` 不存在，`docker version` 与 `docker compose ps` 均报 `Cannot connect to the Docker daemon`，且 PID 1 为 `sshd` 而非 systemd，`service docker status` 也不可用。因此本轮无法在该环境内完成容器实跑，这属于运行环境限制而非仓库配置缺陷。
+- 运行级验证结论：后端本机进程健康检查 `curl http://localhost:8080/health` 通过；前端 `http://localhost:8081/` 无法访问的直接原因是 Compose 栈未实际启动，而根因是当前环境缺少可用的 Docker daemon。
+- 已补做非容器联调验证：当前环境已有本地后端 `http://localhost:8080/health` 和前端开发服务 `http://localhost:5173/` 在运行；`/?app=passenger`、`/?app=driver`、`/?app=admin` 三个入口均能返回页面 HTML，且通过前端开发代理访问 `POST /api/auth/send-code` 可成功返回演示验证码响应，说明本地前后端基础链路可用。
+- 浏览器自动化仍受环境限制：`/root/didi/scripts/with_server.py` 不存在，且 Python 环境缺少 `playwright` 模块，因此本轮继续采用 HTTP 联调而不是 Playwright 自动化。
+- 已补做三角色鉴权 HTTP 联调：通过前端开发代理登录后，乘客访问 `/api/passenger/orders` 返回 200，管理员访问 `/api/admin/orders` 返回 200。
+- 本轮发现本地 `localhost:8080` 上正在运行的后端进程不是当前仓库源码对应的最新服务：它对 `GET /api/driver/orders` 返回 404，却错误地允许司机 token 访问 `/api/passenger/orders` 返回 200；而基于当前源码重新编译后，在隔离网络中运行的最新后端对 `GET /api/driver/orders` 返回 200，并对司机访问 `/api/passenger/orders` 正确返回 403。由此可确认，司机链路异常来自当前宿主机上残留的旧后端进程，而不是仓库里的最新代码。
+- 已停止宿主机上残留的旧 `go run ./cmd/api` 进程，并重新以当前仓库源码启动本机后端；随后通过真实登录链路验证：乘客访问 `/api/passenger/orders` 返回 200、司机访问同接口返回 403、司机访问 `/api/driver/orders` 返回 200、管理员访问 `/api/admin/orders` 返回 200，本机联调结果已与当前源码一致。
+- 已将登录态与真实身份绑定：乘客接口会按登录手机号解析到对应乘客档案并只返回该乘客自己的订单；司机接口会按登录手机号解析到对应司机档案并仅允许司机读取自己的资料与订单视图。
+- 已新增身份边界测试：`TestPassengerOrdersOnlyReturnAuthenticatedPassengerOrders`、`TestDriverProfileUsesAuthenticatedDriverPhone`，并修正历史鉴权测试中未种入乘客身份导致的假失败。
+- 本轮最终验证再次通过：`go -C /root/didi/backend test ./...`、`npm --prefix /root/didi/frontend run build`、`docker compose -f /root/didi/infra/docker-compose.yml config`。
+- 已补齐同角色越权边界：乘客对取消订单、支付订单、评价订单、查询司机位置等接口，除了要求 PASSENGER 角色外，还必须属于当前登录乘客本人；司机位置上报不再信任请求体里的 `driverId`，统一按当前登录司机身份写入位置。
+- 已新增越权回归测试：`TestPassengerCannotOperateAnotherPassengersOrder`、`TestDriverLocationUsesAuthenticatedDriverIdentity`，并再次通过 `go -C /root/didi/backend test ./...` 与 `npm --prefix /root/didi/frontend run build`。
+- 已补齐司机订单推进归属校验：`/api/driver/orders/:id/arrive`、`/start`、`/end` 现在都会先校验当前登录司机就是该订单的指派司机，非本单司机会直接返回 403，不再允许把别人的订单推进到到达、开始或结束。
+- 已新增司机越权回归测试：`TestDriverCannotAdvanceAnotherDriversOrder`，并再次通过 `go -C /root/didi/backend test ./...` 与 `npm --prefix /root/didi/frontend run build`。
+- 已补齐登录角色绑定：`POST /api/auth/login` 现在会先校验手机号是否真实属于请求角色，乘客/司机必须能在 store 中找到对应身份，管理员则收敛为演示固定手机号 `13700000001`；不再允许用乘客手机号伪装司机、用司机手机号伪装乘客或随意伪造管理员登录。
+- 已新增登录边界测试：`TestLoginRejectsPhoneRoleMismatch`、`TestAdminLoginAllowsDemoAdminPhone`，并同步修正旧鉴权测试为“真实身份登录后验证访问被拒绝”的口径；随后再次通过 `go -C /root/didi/backend test ./...` 与 `npm --prefix /root/didi/frontend run build`。
+- 已收紧乘客查司机位置的历史订单隐私边界：`GET /api/passenger/orders/:id/driver-location` 现在仅允许活跃订单状态 `WAITING_PICKUP`、`DRIVER_ARRIVED`、`IN_PROGRESS` 查看司机当前位置；已完成、已取消、待支付、已支付完成等非活跃订单会返回 409，避免历史订单继续暴露司机实时位置。
+- 已新增回归测试：`TestPassengerCannotReadDriverLocationForCompletedOrder`，先验证已完成订单错误地返回 200 和司机位置，再以最小修复转绿；本轮再次通过 `go -C /root/didi/backend test ./...`。
+- 已收紧司机订单列表可见性：`GET /api/driver/orders` 不再把所有 `DISPATCHING` 订单直接暴露给任意司机；现在仅返回当前登录司机已指派的订单，或当前最新派单尝试正好 `OFFERED` 给该司机的派单中订单。
+- 已新增越权回归测试：`TestDriverOrdersHideDispatchingOrdersOfferedToAnotherDriver`，先验证司机 B 会错误看到派给司机 A 的派单中订单，再以最小修复转绿；本轮再次通过 `go -C /root/didi/backend test ./...`。
+
+## 2026-05-18
+
+- 已完成微服务架构设计：`docs/superpowers/specs/2026-05-18-ride-hailing-microservices-architecture-design.md`。
+- 已完成微服务迁移实施计划：`docs/superpowers/plans/2026-05-18-ride-hailing-microservices-architecture.md`。
+- 已确认当前仓库原始运行形态仍是单体 `api` 进程，对外所有 HTTP 与 WebSocket 入口集中在旧 `cmd/api`。
+- 已切换迁移策略为双轨迁移：保留旧 `api` 作为内部业务承接面，新增 gateway 作为对外统一入口，先做“第一个可用版本”，不做一次性硬切。
+- 已新增共享契约与平台基础：`backend/internal/contracts/*`、`backend/internal/platform/*`，为后续微服务拆分提供状态、事件、配置、MySQL、Redis、Kafka 和 outbox 基础边界。
+- 已新增 auth、user、driver、location、order、dispatch、payment、realtime、admin 服务独立目录与可执行入口，形成多二进制微服务骨架。
+- 已新增 gateway：对外暴露 `/health`、`/api/*` 与 `/ws`，当前通过反向代理把请求转发到内部旧 `api`，形成双轨可运行入口。
+- 已更新 `frontend/nginx.conf` 与 `infra/docker-compose.yml`：前端容器统一代理到 `gateway:8080`，Compose 拓扑调整为 `mysql + redis + kafka + api + gateway + frontend`。
+- 已为 backend Docker 构建切换到 Go 1.25，并将在线依赖下载改为阿里云 Go 代理：`GOPROXY=https://mirrors.aliyun.com/goproxy/,direct`，同时关闭 `GOSUMDB` 以适配当前受限环境中的校验超时。
+- 本轮调试确认当前 Ubuntu 运行在 Docker 容器中，默认本地 dockerd 使用 overlayfs 时无法正常 build/run；最小复现已证明根因在嵌套容器环境的存储驱动限制，而非项目 Dockerfile 或业务代码错误。
+- 已在当前 Ubuntu 实例内部启动独立 `vfs` daemon：`/tmp/dockerd-vfs.sock`，并使用它成功完成 `docker run`、`docker build` 与 `docker compose up --build -d`。
+- 已确认阿里云 Docker mirror 配置在 daemon 中生效，但当前环境下对 Docker Hub 拉取仍存在回退超时，因此基础镜像来源恢复为先前已验证可运行的 `public.ecr.aws/...`，以保证第一可用版本稳定交付。
+- 已完成运行验证：`DOCKER_HOST=unix:///tmp/dockerd-vfs.sock docker compose -f /root/didi/infra/docker-compose.yml up --build -d` 后，`gateway`、`frontend`、`mysql`、`redis`、`kafka`、内部 `api` 均成功运行。
+- 已完成 HTTP 验活：`curl http://localhost:8080/health` 返回 `{"data":{"service":"gateway","status":"ok"}}`。
+- 已完成前端入口验活：`curl -I http://localhost:8081/` 返回 `HTTP/1.1 200 OK`。
+- 已完成经 gateway 的登录链路验活：`POST http://localhost:8080/api/auth/login` 使用演示验证码 `123456` 返回 200，并能获取 `accessToken` 与 `refreshToken`。
+- 已更新 `README.md`：补充双轨迁移后的真实运行形态、当前 Ubuntu-in-Docker 下的 `vfs` daemon 启动方式、gateway 对外入口、以及当前已验证的 Compose 运行命令与验活步骤。

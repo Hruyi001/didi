@@ -12,10 +12,12 @@
 ## 技术栈
 
 - 前端：Vue 3 + TypeScript + Vite
-- 后端：Go 1.22+，当前第一版用 Gin 风格 HTTP 网关实现可运行服务，内部模块边界按 Kratos 微服务拆分设计
+- 后端：Go 1.25+，当前采用双轨迁移形态：对外入口为 gateway，旧 `api` 单体入口保留在内部网络，新 auth/user/driver/location/order/dispatch/payment/realtime/admin 服务已提供独立二进制骨架
 - 数据与基础设施：MySQL、Redis、Kafka、Docker Compose
 
 ## 启动后端
+
+如果只验证旧 `api` 单体入口，可直接运行：
 
 ```bash
 cd backend
@@ -29,7 +31,7 @@ go run ./cmd/api
 go -C /root/didi/backend run ./cmd/api
 ```
 
-后端默认监听：`http://localhost:8080`
+此模式下后端默认监听：`http://localhost:8080`
 
 健康检查：
 
@@ -57,16 +59,30 @@ npm run dev
 
 ## Docker Compose
 
-推荐直接启动完整演示环境：
+当前推荐启动完整双轨演示环境：gateway 对外暴露 `8080`，旧 `api` 保留在 Compose 内部网络，前端容器统一通过 gateway 访问 `/api/*` 和 `/ws`。
 
 ```bash
-docker compose -f infra/docker-compose.yml up --build
+docker compose -f infra/docker-compose.yml up --build -d
 ```
 
 或在任意目录显式指定绝对路径：
 
 ```bash
-docker compose -f /root/didi/infra/docker-compose.yml up --build
+docker compose -f /root/didi/infra/docker-compose.yml up --build -d
+```
+
+如果当前 Ubuntu 运行在 Docker 容器中，默认 dockerd 可能因为 overlayfs 无法正常 build/run。此时可先在当前 Ubuntu 实例内部启动一个 `vfs` daemon，再显式指定 `DOCKER_HOST`：
+
+```bash
+nohup dockerd \
+  --host=unix:///tmp/dockerd-vfs.sock \
+  --data-root=/tmp/dockerd-vfs-data \
+  --exec-root=/tmp/dockerd-vfs-exec \
+  --pidfile=/tmp/dockerd-vfs.pid \
+  --storage-driver=vfs \
+  >/tmp/dockerd-vfs.log 2>&1 &
+
+DOCKER_HOST=unix:///tmp/dockerd-vfs.sock docker compose -f /root/didi/infra/docker-compose.yml up --build -d
 ```
 
 启动后可直接访问：
@@ -74,9 +90,9 @@ docker compose -f /root/didi/infra/docker-compose.yml up --build
 - 乘客端：`http://localhost:8081/?app=passenger`
 - 司机端：`http://localhost:8081/?app=driver`
 - 管理后台：`http://localhost:8081/?app=admin`
-- 后端健康检查：`http://localhost:8080/health`
+- gateway 健康检查：`http://localhost:8080/health`
 
-当前 Compose 会同时启动 MySQL、Redis、Kafka、后端 API 和前端静态站点。浏览器只需要访问前端入口，前端容器会把 `/api/*` 与 `/ws` 代理到 Compose 网络里的 `api:8080`。
+当前 Compose 会同时启动 MySQL、Redis、Kafka、旧 `api`、gateway 和前端静态站点。浏览器只需要访问前端入口，前端容器会把 `/api/*` 与 `/ws` 代理到 Compose 网络里的 `gateway:8080`，gateway 再把请求转发到内部 `api:8080`。
 
 如需仅做配置校验：
 
@@ -99,8 +115,8 @@ docker compose -f infra/docker-compose.yml config
 
 ## 关键文档
 
-- 设计规格：`docs/superpowers/specs/2026-05-17-ride-hailing-platform-design.md`
-- 实施计划：`docs/superpowers/plans/2026-05-17-ride-hailing-platform.md`
+- 微服务架构设计：`docs/superpowers/specs/2026-05-18-ride-hailing-microservices-architecture-design.md`
+- 微服务迁移实施计划：`docs/superpowers/plans/2026-05-18-ride-hailing-microservices-architecture.md`
 - 实施过程记录：`docs/implementation/progress.md`
 
 ## 验证命令
@@ -110,17 +126,29 @@ go -C /root/didi/backend test ./...
 npm --prefix /root/didi/frontend install
 npm --prefix /root/didi/frontend run build
 docker compose -f /root/didi/infra/docker-compose.yml config
-docker compose -f /root/didi/infra/docker-compose.yml up --build -d
+DOCKER_HOST=unix:///tmp/dockerd-vfs.sock docker compose -f /root/didi/infra/docker-compose.yml up --build -d
 curl http://localhost:8080/health
 curl -I http://localhost:8081/
-docker compose -f /root/didi/infra/docker-compose.yml ps
+python3 - <<'PY'
+import json, urllib.request
+req = urllib.request.Request(
+    'http://localhost:8080/api/auth/login',
+    data=json.dumps({'phone':'13800000001','code':'123456','role':'PASSENGER'}).encode(),
+    headers={'Content-Type':'application/json'},
+    method='POST'
+)
+with urllib.request.urlopen(req) as r:
+    print(r.status)
+    print(r.read().decode())
+PY
+DOCKER_HOST=unix:///tmp/dockerd-vfs.sock docker compose -f /root/didi/infra/docker-compose.yml ps
 ```
 
 ## 第一版限制
 
-- 当前运行时使用内存存储，`infra/schema.sql` 提供 MySQL 生产形态 schema。
-- Kafka 和 Redis 已进入部署与架构边界，第一版核心链路使用进程内同步调用跑通。
+- 当前双轨版本对外入口已经切到 gateway，但业务请求仍主要由内部旧 `api` 处理，新拆分服务目前提供独立二进制与模块骨架，尚未全部接入真实流量。
+- 当前运行时主要使用内存存储，`infra/schema.sql` 提供 MySQL 生产形态 schema。
+- Kafka 和 Redis 已进入部署与架构边界，第一版核心链路仍以进程内同步调用跑通，后续可逐步切到事件驱动。
 - 高德地图在第一版前端中以地图模拟区域呈现，后续可接入真实高德 JS SDK 和后端地图适配层。
 - WebSocket 当前已支持订单状态、司机位置实时广播与心跳；更细粒度的轨迹回放、按角色定向推送和 Kafka 驱动事件扇出可作为下一迭代补充。
 - 司机端第一版使用种子司机，完整司机认证表单可在下一迭代增强。
-# didi

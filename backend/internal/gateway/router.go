@@ -1,0 +1,33 @@
+package gateway
+
+import (
+	"net/http/httputil"
+	"net/url"
+
+	"github.com/gin-gonic/gin"
+)
+
+type Clients struct {
+	APIBase string
+}
+
+func NewRouter(clients *Clients) *gin.Engine {
+	r := gin.Default()
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"data": gin.H{"status": "ok", "service": "gateway"}})
+	})
+	if clients != nil && clients.APIBase != "" {
+		apiProxy := newReverseProxy(clients.APIBase)
+		r.Any("/api/*path", gin.WrapH(apiProxy))
+		r.Any("/ws", gin.WrapH(apiProxy))
+	}
+	return r
+}
+
+func newReverseProxy(target string) *httputil.ReverseProxy {
+	urlValue, err := url.Parse(target)
+	if err != nil {
+		panic(err)
+	}
+	return httputil.NewSingleHostReverseProxy(urlValue)
+}
