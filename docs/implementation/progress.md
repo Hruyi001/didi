@@ -81,3 +81,24 @@
 - 已完成前端入口验活：`curl -I http://localhost:8081/` 返回 `HTTP/1.1 200 OK`。
 - 已完成经 gateway 的登录链路验活：`POST http://localhost:8080/api/auth/login` 使用演示验证码 `123456` 返回 200，并能获取 `accessToken` 与 `refreshToken`。
 - 已更新 `README.md`：补充双轨迁移后的真实运行形态、当前 Ubuntu-in-Docker 下的 `vfs` daemon 启动方式、gateway 对外入口、以及当前已验证的 Compose 运行命令与验活步骤。
+
+## 2026-05-19
+
+- 已完成第四阶段共享状态迁移设计：`docs/superpowers/specs/2026-05-18-phase-4-shared-state-migration-design.md`。
+- 已完成第四阶段实施计划：`docs/superpowers/plans/2026-05-18-phase-4-shared-state-migration.md`。
+- 已新增 `store.Store` 共享合同测试，并以同一套合同约束 `MemoryStore` 与新 `MySQLStore` 行为。
+- 已新增 MySQL 版业务状态存储：乘客、司机、车辆、位置、订单、派单任务、派单尝试、支付、评价均可通过共享 MySQL 状态读写。
+- 已将旧 `api` 支持切换为 `STORE_BACKEND=mysql`，Compose 环境中旧 `api` 使用 MySQL 共享状态并按 `SEED_DEMO_DATA=true` 种入演示数据。
+- 已新增 `admin-service` 真实只读 MySQL 查询模型，`GET /api/admin/drivers` 会读取共享状态中的司机与车辆信息，不再返回桩数据。
+- 已在 `admin-service` 中补齐 ADMIN token 鉴权，服务自身校验 `AUTH_TOKEN_SECRET`，不信任 gateway 代鉴权；仓库错误不会原样泄露给客户端。
+- 已更新 gateway：仅当配置 `ADMIN_BASE` 时将 `GET /api/admin/drivers` 转发到 `admin-service`，其余 admin 写接口仍留在旧 `api`。
+- 已更新 Compose：新增 `admin-service`，`api/auth-service/admin-service` 共享本地演示 token secret，`api/admin-service` 等待 MySQL healthcheck 后启动。
+- 已补充共享状态联调测试：管理员经 gateway 登录后读取 `/api/admin/drivers` 能看到旧 `api` 种入 MySQL 的司机与车牌；乘客 token 访问同接口返回 403。
+- 已修复最终代码审查反馈：派单接受/拒绝/超时/改派历史记录保留 `DispatchTaskID`，重复 `CreatePayment` 按 `order_id` 幂等返回已有支付单，`AddDispatchAttempt` 在司机并发不可抢占时返回错误而不是 panic。
+- 已更新 README，记录旧本地 MySQL 数据目录可能缺少新增列时的非破坏性 `ALTER TABLE` 处理方式，以及可选的数据卷重置方式。
+- 最终验证通过：`go -C /root/didi/backend test ./...`。
+- 最终验证通过：`npm --prefix /root/didi/frontend run build`。
+- 最终验证通过：`docker compose -f /root/didi/infra/docker-compose.yml config`。
+- 运行验证通过：`DOCKER_HOST=unix:///tmp/dockerd-vfs.sock docker compose -f /root/didi/infra/docker-compose.yml up --build -d` 后，`api`、`auth-service`、`admin-service`、`gateway`、`frontend`、`mysql`、`redis`、`kafka` 均成功运行。
+- 运行验证通过：`curl http://localhost:8080/health` 返回 gateway 健康状态，`curl -I http://localhost:8081/` 返回 `HTTP/1.1 200 OK`。
+- 运行验证通过：`go -C /root/didi/backend test ./integration`。

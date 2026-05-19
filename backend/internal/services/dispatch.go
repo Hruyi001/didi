@@ -24,7 +24,10 @@ func (s *DispatchService) Dispatch(orderID string) (domain.DispatchAttempt, erro
 	}
 	task := s.store.CreateDispatchTask(orderID, len(drivers))
 	driver := drivers[0]
-	attempt := s.store.AddDispatchAttempt(domain.DispatchAttempt{DispatchTaskID: task.ID, OrderID: orderID, DriverID: driver.ID, Status: domain.DispatchOffered, DistanceToPickup: 1.2, TimeoutAt: time.Now().Add(20 * time.Second), SequenceNo: 1})
+	attempt, err := s.store.AddDispatchAttempt(domain.DispatchAttempt{DispatchTaskID: task.ID, OrderID: orderID, DriverID: driver.ID, Status: domain.DispatchOffered, DistanceToPickup: 1.2, TimeoutAt: time.Now().Add(20 * time.Second), SequenceNo: 1})
+	if err != nil {
+		return domain.DispatchAttempt{}, err
+	}
 	return attempt, nil
 }
 
@@ -37,7 +40,10 @@ func (s *DispatchService) Accept(orderID, driverID string) (domain.RideOrder, er
 		return domain.RideOrder{}, err
 	}
 	attempts := s.store.ListDispatchAttempts(orderID)
-	s.store.AddDispatchAttempt(domain.DispatchAttempt{OrderID: orderID, DriverID: driverID, Status: domain.DispatchAccepted, OfferedAt: time.Now(), TimeoutAt: time.Now(), SequenceNo: len(attempts) + 1})
+	latest := attempts[len(attempts)-1]
+	if _, err := s.store.AddDispatchAttempt(domain.DispatchAttempt{DispatchTaskID: latest.DispatchTaskID, OrderID: orderID, DriverID: driverID, Status: domain.DispatchAccepted, OfferedAt: time.Now(), TimeoutAt: time.Now(), SequenceNo: len(attempts) + 1}); err != nil {
+		return domain.RideOrder{}, err
+	}
 	return order, nil
 }
 
@@ -82,7 +88,11 @@ func (s *DispatchService) ensureCurrentOffer(orderID, driverID string) error {
 
 func (s *DispatchService) advance(orderID, driverID string, result domain.DispatchStatus, reason string, now time.Time) (domain.DispatchAttempt, error) {
 	attempts := s.store.ListDispatchAttempts(orderID)
-	finishedAttempt := s.store.AddDispatchAttempt(domain.DispatchAttempt{OrderID: orderID, DriverID: driverID, Status: result, RejectReason: reason, OfferedAt: now, TimeoutAt: now, SequenceNo: len(attempts) + 1})
+	latest := attempts[len(attempts)-1]
+	finishedAttempt, err := s.store.AddDispatchAttempt(domain.DispatchAttempt{DispatchTaskID: latest.DispatchTaskID, OrderID: orderID, DriverID: driverID, Status: result, RejectReason: reason, OfferedAt: now, TimeoutAt: now, SequenceNo: len(attempts) + 1})
+	if err != nil {
+		return domain.DispatchAttempt{}, err
+	}
 	if err := s.store.ResetDriverToIdle(driverID); err != nil {
 		return domain.DispatchAttempt{}, err
 	}
@@ -100,7 +110,8 @@ func (s *DispatchService) advance(orderID, driverID string, result domain.Dispat
 		if _, used := offeredDrivers[driver.ID]; used {
 			continue
 		}
-		nextAttempt := s.store.AddDispatchAttempt(domain.DispatchAttempt{
+		nextAttempt, err := s.store.AddDispatchAttempt(domain.DispatchAttempt{
+			DispatchTaskID:   latest.DispatchTaskID,
 			OrderID:          orderID,
 			DriverID:         driver.ID,
 			Status:           domain.DispatchOffered,
@@ -108,10 +119,13 @@ func (s *DispatchService) advance(orderID, driverID string, result domain.Dispat
 			TimeoutAt:        now.Add(20 * time.Second),
 			SequenceNo:       len(attempts) + 2,
 		})
+		if err != nil {
+			continue
+		}
 		return nextAttempt, nil
 	}
 
-	_, err := s.store.UpdateOrderStatus(orderID, domain.OrderDispatchFailed)
+	_, err = s.store.UpdateOrderStatus(orderID, domain.OrderDispatchFailed)
 	if err != nil {
 		return domain.DispatchAttempt{}, err
 	}

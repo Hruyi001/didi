@@ -100,6 +100,22 @@ DOCKER_HOST=unix:///tmp/dockerd-vfs.sock docker compose -f /root/didi/infra/dock
 docker compose -f infra/docker-compose.yml config
 ```
 
+如果之前已经启动过 Compose，MySQL 容器可能复用旧的数据目录；`infra/schema.sql` 只会在空数据目录初始化时执行。若启动后因 `driver_profiles` 缺少 `accepted_count`、`rejected_count`、`timeout_count` 失败，可任选其一：
+
+```sql
+ALTER TABLE driver_profiles
+  ADD COLUMN accepted_count INT NOT NULL DEFAULT 0,
+  ADD COLUMN rejected_count INT NOT NULL DEFAULT 0,
+  ADD COLUMN timeout_count INT NOT NULL DEFAULT 0;
+```
+
+如果不需要保留本地演示数据，也可以重置 Compose 数据卷后重启：
+
+```bash
+DOCKER_HOST=unix:///tmp/dockerd-vfs.sock docker compose -f /root/didi/infra/docker-compose.yml down -v
+DOCKER_HOST=unix:///tmp/dockerd-vfs.sock docker compose -f /root/didi/infra/docker-compose.yml up --build -d
+```
+
 如需本地开发模式，仍可单独启动前后端：后端使用 `go run ./cmd/api`，前端使用 `npm run dev`。
 
 ## 演示流程

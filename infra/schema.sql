@@ -20,6 +20,9 @@ CREATE TABLE IF NOT EXISTS driver_profiles (
   phone VARCHAR(32) NOT NULL,
   audit_state VARCHAR(32) NOT NULL,
   work_status VARCHAR(32) NOT NULL,
+  accepted_count INT NOT NULL DEFAULT 0,
+  rejected_count INT NOT NULL DEFAULT 0,
+  timeout_count INT NOT NULL DEFAULT 0,
   created_at DATETIME NOT NULL
 );
 
@@ -29,7 +32,8 @@ CREATE TABLE IF NOT EXISTS vehicles (
   plate_no VARCHAR(32) NOT NULL,
   model VARCHAR(64) NOT NULL,
   color VARCHAR(32) NOT NULL,
-  audit_state VARCHAR(32) NOT NULL
+  audit_state VARCHAR(32) NOT NULL,
+  UNIQUE KEY uk_vehicles_driver (driver_id)
 );
 
 CREATE TABLE IF NOT EXISTS ride_orders (
@@ -114,7 +118,8 @@ CREATE TABLE IF NOT EXISTS reviews (
   score INT NOT NULL,
   content VARCHAR(500) NOT NULL,
   status VARCHAR(32) NOT NULL,
-  created_at DATETIME NOT NULL
+  created_at DATETIME NOT NULL,
+  UNIQUE KEY uk_reviews_order (order_id)
 );
 
 CREATE TABLE IF NOT EXISTS admin_users (
@@ -134,4 +139,12 @@ CREATE TABLE IF NOT EXISTS admin_action_logs (
   before_state JSON,
   after_state JSON,
   created_at DATETIME NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS driver_locations (
+  driver_id VARCHAR(64) PRIMARY KEY,
+  lng DECIMAL(10, 6) NOT NULL,
+  lat DECIMAL(10, 6) NOT NULL,
+  speed_kph INT NOT NULL,
+  updated_at DATETIME NOT NULL
 );

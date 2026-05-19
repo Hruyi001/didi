@@ -42,6 +42,9 @@ func TestRejectRedispatchesToNextDriver(t *testing.T) {
 	if nextAttempt.Status != domain.DispatchOffered {
 		t.Fatalf("expected offered status, got %s", nextAttempt.Status)
 	}
+	if nextAttempt.DispatchTaskID != attempt.DispatchTaskID {
+		t.Fatalf("expected redispatch attempt dispatch task %s, got %s", attempt.DispatchTaskID, nextAttempt.DispatchTaskID)
+	}
 
 	updatedOrder, ok := s.GetOrder(order.ID)
 	if !ok {
@@ -125,6 +128,9 @@ func TestTimeoutRedispatchesToNextDriver(t *testing.T) {
 	if attempts[2].DriverID != driverB.ID {
 		t.Fatalf("expected redispatch to driver B, got %s", attempts[2].DriverID)
 	}
+	if attempts[1].DispatchTaskID != attempts[0].DispatchTaskID || attempts[2].DispatchTaskID != attempts[0].DispatchTaskID {
+		t.Fatalf("expected timeout history to keep dispatch task id, got %#v", attempts)
+	}
 }
 
 func TestAcceptRecordsAcceptedDispatchAttempt(t *testing.T) {
@@ -162,5 +168,8 @@ func TestAcceptRecordsAcceptedDispatchAttempt(t *testing.T) {
 	}
 	if attempts[1].DriverID != driver.ID {
 		t.Fatalf("expected accepted attempt for driver %s, got %s", driver.ID, attempts[1].DriverID)
+	}
+	if attempts[1].DispatchTaskID != firstAttempt.DispatchTaskID {
+		t.Fatalf("expected accepted attempt dispatch task %s, got %s", firstAttempt.DispatchTaskID, attempts[1].DispatchTaskID)
 	}
 }

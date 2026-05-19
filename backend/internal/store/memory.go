@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -276,19 +277,23 @@ func (s *MemoryStore) CreateDispatchTask(orderID string, candidates int) domain.
 	return task
 }
 
-func (s *MemoryStore) AddDispatchAttempt(attempt domain.DispatchAttempt) domain.DispatchAttempt {
+func (s *MemoryStore) AddDispatchAttempt(attempt domain.DispatchAttempt) (domain.DispatchAttempt, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	attempt.ID = uuid.NewString()
 	if attempt.OfferedAt.IsZero() {
 		attempt.OfferedAt = time.Now()
 	}
-	s.dispatchAttempts[attempt.OrderID] = append(s.dispatchAttempts[attempt.OrderID], attempt)
-	if driver, ok := s.drivers[attempt.DriverID]; ok && attempt.Status == domain.DispatchOffered {
+	if attempt.Status == domain.DispatchOffered {
+		driver, ok := s.drivers[attempt.DriverID]
+		if !ok || driver.WorkStatus != domain.DriverOnlineIdle {
+			return domain.DispatchAttempt{}, fmt.Errorf("cannot offer dispatch attempt to unclaimable driver %s", attempt.DriverID)
+		}
 		driver.WorkStatus = domain.DriverDispatched
 		s.drivers[driver.ID] = driver
 	}
-	return attempt
+	s.dispatchAttempts[attempt.OrderID] = append(s.dispatchAttempts[attempt.OrderID], attempt)
+	return attempt, nil
 }
 
 func (s *MemoryStore) ResetDriverToIdle(driverID string) error {
@@ -316,6 +321,9 @@ func (s *MemoryStore) ListDispatchAttempts(orderID string) []domain.DispatchAtte
 func (s *MemoryStore) CreatePayment(orderID string, amount int64) domain.PaymentOrder {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if payment, ok := s.payments[orderID]; ok {
+		return payment
+	}
 	payment := domain.PaymentOrder{ID: uuid.NewString(), OrderID: orderID, Amount: amount, Status: domain.PaymentUnpaid, CreatedAt: time.Now()}
 	s.payments[orderID] = payment
 	return payment
@@ -338,9 +346,12 @@ func (s *MemoryStore) MarkPaymentPaid(orderID string) (domain.PaymentOrder, erro
 func (s *MemoryStore) CreateReview(orderID string, score int, content string) domain.Review {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	order, ok := s.orders[orderID]
+	if !ok {
+		panic("order not found")
+	}
 	review := domain.Review{ID: uuid.NewString(), OrderID: orderID, Score: score, Content: content, Status: domain.ReviewReviewed, CreatedAt: time.Now()}
 	s.reviews[orderID] = review
-	order := s.orders[orderID]
 	order.ReviewStatus = domain.ReviewReviewed
 	order.Version++
 	s.orders[orderID] = order

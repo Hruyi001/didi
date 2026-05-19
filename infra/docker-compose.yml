@@ -8,6 +8,12 @@ services:
       - "3306:3306"
     volumes:
       - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
   redis:
     image: public.ecr.aws/docker/library/redis:7
     ports:
@@ -27,12 +33,20 @@ services:
   api:
     build: ../backend
     command: ["/bin/didi-api"]
+    environment:
+      STORE_BACKEND: mysql
+      MYSQL_DSN: root:root@tcp(mysql:3306)/didi?parseTime=true&charset=utf8mb4&loc=Local
+      SEED_DEMO_DATA: "true"
+      AUTH_TOKEN_SECRET: didi-local-demo-shared-secret
     expose:
       - "8080"
     depends_on:
-      - mysql
-      - redis
-      - kafka
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      kafka:
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
       interval: 10s
@@ -42,10 +56,29 @@ services:
   auth-service:
     build: ../backend
     command: ["/bin/didi-auth-service"]
+    environment:
+      AUTH_TOKEN_SECRET: didi-local-demo-shared-secret
     expose:
       - "18081"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:18081/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+  admin-service:
+    build: ../backend
+    command: ["/bin/didi-admin-service"]
+    environment:
+      ADMIN_MYSQL_DSN: root:root@tcp(mysql:3306)/didi?parseTime=true&charset=utf8mb4&loc=Local
+      AUTH_TOKEN_SECRET: didi-local-demo-shared-secret
+    expose:
+      - "18089"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:18089/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -56,12 +89,15 @@ services:
     environment:
       API_BASE: http://api:8080
       AUTH_BASE: http://auth-service:18081
+      ADMIN_BASE: http://admin-service:18089
     ports:
       - "8080:8080"
     depends_on:
       api:
         condition: service_healthy
       auth-service:
+        condition: service_healthy
+      admin-service:
         condition: service_healthy
   frontend:
     build: ../frontend

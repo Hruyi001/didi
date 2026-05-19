@@ -20,7 +20,7 @@ type Store interface {
 	UpdateOrderStatus(orderID string, to domain.OrderStatus) (domain.RideOrder, error)
 	AssignDriver(orderID, driverID string) (domain.RideOrder, error)
 	CreateDispatchTask(orderID string, candidates int) domain.DispatchTask
-	AddDispatchAttempt(attempt domain.DispatchAttempt) domain.DispatchAttempt
+	AddDispatchAttempt(attempt domain.DispatchAttempt) (domain.DispatchAttempt, error)
 	ListDispatchAttempts(orderID string) []domain.DispatchAttempt
 	ResetDriverToIdle(driverID string) error
 	CreatePayment(orderID string, amount int64) domain.PaymentOrder

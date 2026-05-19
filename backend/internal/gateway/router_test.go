@@ -89,6 +89,59 @@ func TestPassengerOrdersStillRouteToLegacyAPI(t *testing.T) {
 	}
 }
 
+func TestAdminDriversRoutesToAdminProxyWhenConfigured(t *testing.T) {
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "api")
+	}))
+	defer api.Close()
+	admin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "admin")
+	}))
+	defer admin.Close()
+
+	server := httptest.NewServer(NewRouter(&Clients{APIBase: api.URL, AdminBase: admin.URL}))
+	defer server.Close()
+
+	body := requestBody(t, http.MethodGet, server.URL+"/api/admin/drivers")
+	if body != "admin" {
+		t.Fatalf("expected admin upstream, got %q", body)
+	}
+}
+
+func TestAdminDriversFallsBackToAPIProxyWithoutAdminBase(t *testing.T) {
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "api")
+	}))
+	defer api.Close()
+
+	server := httptest.NewServer(NewRouter(&Clients{APIBase: api.URL}))
+	defer server.Close()
+
+	body := requestBody(t, http.MethodGet, server.URL+"/api/admin/drivers")
+	if body != "api" {
+		t.Fatalf("expected api upstream, got %q", body)
+	}
+}
+
+func TestAdminApproveDriverStillRoutesToLegacyAPI(t *testing.T) {
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "api")
+	}))
+	defer api.Close()
+	admin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "admin")
+	}))
+	defer admin.Close()
+
+	server := httptest.NewServer(NewRouter(&Clients{APIBase: api.URL, AdminBase: admin.URL}))
+	defer server.Close()
+
+	body := requestBody(t, http.MethodPost, server.URL+"/api/admin/drivers/driver-1/approve")
+	if body != "api" {
+		t.Fatalf("expected api upstream, got %q", body)
+	}
+}
+
 func requestBody(t *testing.T, method, url string) string {
 	t.Helper()
 

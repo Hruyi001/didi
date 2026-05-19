@@ -9,8 +9,9 @@ import (
 )
 
 type Clients struct {
-	APIBase  string
-	AuthBase string
+	APIBase   string
+	AuthBase  string
+	AdminBase string
 }
 
 func NewRouter(clients *Clients) *gin.Engine {
@@ -24,9 +25,17 @@ func NewRouter(clients *Clients) *gin.Engine {
 		if clients.AuthBase != "" {
 			authProxy = newReverseProxy(clients.AuthBase)
 		}
+		adminProxy := apiProxy
+		if clients.AdminBase != "" {
+			adminProxy = newReverseProxy(clients.AdminBase)
+		}
 		r.Any("/api/*path", func(c *gin.Context) {
 			if shouldProxyToAuth(c) {
 				gin.WrapH(authProxy)(c)
+				return
+			}
+			if shouldProxyToAdmin(c) {
+				gin.WrapH(adminProxy)(c)
 				return
 			}
 			gin.WrapH(apiProxy)(c)
@@ -42,6 +51,18 @@ func shouldProxyToAuth(c *gin.Context) bool {
 	}
 	switch c.Request.URL.Path {
 	case "/api/auth/login", "/api/auth/send-code":
+		return true
+	default:
+		return false
+	}
+}
+
+func shouldProxyToAdmin(c *gin.Context) bool {
+	if c.Request.Method != http.MethodGet {
+		return false
+	}
+	switch c.Request.URL.Path {
+	case "/api/admin/drivers":
 		return true
 	default:
 		return false

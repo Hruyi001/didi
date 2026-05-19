@@ -13,6 +13,7 @@ func main() {
 		apiBase = "http://localhost:18080"
 	}
 	authBase := os.Getenv("AUTH_BASE")
-	r := gateway.NewRouter(&gateway.Clients{APIBase: apiBase, AuthBase: authBase})
+	adminBase := os.Getenv("ADMIN_BASE")
+	r := gateway.NewRouter(&gateway.Clients{APIBase: apiBase, AuthBase: authBase, AdminBase: adminBase})
 	log.Fatal(r.Run(":8080"))
 }
